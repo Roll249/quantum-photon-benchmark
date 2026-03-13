@@ -32,3 +32,8 @@ class RuntimeConfig:
     max_send_retries: int = 4
     tabu_backtrack_hops: int = 2
     max_visits_per_node: int = 2
+    enable_routing_table_cache: bool = True
+    routing_cache_max_entries: int = 32
+    cache_energy_bin: float = 0.10
+    cache_rate_bin_mbps: float = 50.0
+    cache_delay_bin_ms: float = 1.0

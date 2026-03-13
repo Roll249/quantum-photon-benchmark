@@ -1,0 +1,23 @@
+% Table: Burst benchmark (600s, 5 seeds)
+\begin{table}[t]
+\centering
+\caption{Burst-traffic benchmark results (600s, burst $\times$3 at $t=300\text{--}360$s, 5 seeds).}
+\label{tab:burst-main}
+\begin{tabular}{lccc}
+\hline
+Method & PDR ($\uparrow$) & Avg. Delay [s] ($\downarrow$) & Decision Time [ms] ($\downarrow$) \\
+\hline
+Baseline & $0.0797 \pm 0.0175$ & $0.2226 \pm 0.0032$ & $0.00 \pm 0.00$ \\
+Quantum+Cache & $0.7784 \pm 0.0062$ & $0.1368 \pm 0.0015$ & $29.05 \pm 7.34$ \\
+\hline
+\end{tabular}
+\vspace{2mm}
+
+\begin{tabular}{lc}
+\hline
+Quantum Cache Metric & Value \\
+\hline
+Hit Rate ($\uparrow$) & $0.7167 \pm 0.0000$ \\
+\hline
+\end{tabular}
+\end{table}

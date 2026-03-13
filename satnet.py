@@ -5,6 +5,7 @@
 import csv
 import math
 import time as perf_time
+from collections import OrderedDict
 from pathlib import Path
 from networkx import DiGraph
 import gym
@@ -82,6 +83,19 @@ class SatNet(DiGraph):
         self.packetsArrived = []
         self.packet_drop = []
         self._finalized_packet_ids = set()
+        self._routing_table_cache = OrderedDict()
+        self.cache_hits = 0
+        self.cache_misses = 0
+
+        self.burst_enabled = False
+        self.burst_start_s = 300
+        self.burst_end_s = 360
+        self.burst_multiplier = 3.0
+        self.burst_source_nodes = None
+
+        self.window_generated = 0
+        self.window_arrived = 0
+        self.window_dropped = 0
 
         self.init_net(tlefilepath)
         self.source_node = self.cal_src()
@@ -152,7 +166,7 @@ class SatNet(DiGraph):
         """
         if actions is None and self.runtime_config.use_quantum_routing_by_default:
             begin = perf_time.perf_counter()
-            actions, _ = build_quantum_actions(self, self.quantum_config)
+            actions = self._get_quantum_actions_with_cache()
             self.metrics.record_decision_time(perf_time.perf_counter() - begin)
 
         if actions is None:
@@ -167,6 +181,53 @@ class SatNet(DiGraph):
         # self.time += timedelta(seconds=time)
         # self.update_per_second(self.time)
         return self#, reward, self.done, {}
+
+    def _cache_signature(self):
+        energy_bin = max(1e-9, self.runtime_config.cache_energy_bin)
+
+        energy_ratios = []
+        for node in self.nodes:
+            ratio = self.nodes[node]['n'].bmm.energy / max(1.0, self.nodes[node]['n'].bmm.E_INIT)
+            energy_ratios.append(ratio)
+
+        mean_energy_bucket = int((sum(energy_ratios) / max(1, len(energy_ratios))) / energy_bin)
+        low_energy_count = sum(1 for ratio in energy_ratios if ratio < self.quantum_config.min_energy_ratio)
+        edge_terms = tuple(sorted((u, v) for u, v in self.edges))
+
+        return edge_terms, mean_energy_bucket, low_energy_count, self.source_node, self.destination_node
+
+    def _get_quantum_actions_with_cache(self):
+        if not self.runtime_config.enable_routing_table_cache:
+            actions, _ = build_quantum_actions(self, self.quantum_config)
+            return actions
+
+        signature = self._cache_signature()
+        cached = self._routing_table_cache.get(signature)
+        if cached is not None:
+            self._routing_table_cache.move_to_end(signature)
+            self.cache_hits += 1
+            return cached
+
+        actions, _ = build_quantum_actions(self, self.quantum_config)
+        self.cache_misses += 1
+        self._routing_table_cache[signature] = actions
+        while len(self._routing_table_cache) > self.runtime_config.routing_cache_max_entries:
+            self._routing_table_cache.popitem(last=False)
+        return actions
+
+    def configure_burst_traffic(self, enabled=False, start_s=300, duration_s=60, multiplier=3.0, source_nodes=None):
+        self.burst_enabled = bool(enabled)
+        self.burst_start_s = int(start_s)
+        self.burst_end_s = int(start_s + duration_s)
+        self.burst_multiplier = max(1.0, float(multiplier))
+        self.burst_source_nodes = source_nodes
+
+    def _is_burst_window(self):
+        elapsed_s = int((self.time - datetime(
+            self.start_time[0], self.start_time[1], self.start_time[2],
+            self.start_time[3], self.start_time[4], self.start_time[5]
+        )).total_seconds())
+        return self.burst_enabled and self.burst_start_s <= elapsed_s < self.burst_end_s
 
     def init_traffic(self):
         """
@@ -191,9 +252,18 @@ class SatNet(DiGraph):
         """
         packet = Cbr.generate_packet(self.source_node, self.destination_node, num, generateTime)
         self.metrics.record_generated(num)
+        self.window_generated += num
         # self.nodes[self.source_node]['n'].sending_queue.append(packet)
         self.eventlist.Q.put(
             MakeEvent(self.nodes[self.source_node]['n'], generateTime, 'send', packet, timedelta(seconds=0)))
+
+    def generate_packet_from_source(self, src_node, generateTime, num=1):
+        packet = Cbr.generate_packet(src_node, self.destination_node, num, generateTime)
+        self.metrics.record_generated(num)
+        self.window_generated += num
+        self.eventlist.Q.put(
+            MakeEvent(self.nodes[src_node]['n'], generateTime, 'send', packet, timedelta(seconds=0))
+        )
 
     def generate_timed_events(self):
         """
@@ -201,9 +271,26 @@ class SatNet(DiGraph):
         有可能极端前况下，事件全部处理完了，但是还没到结束的事件，此时已经没有事件可以处理而出现死循环
         :return:
         """
-        for i in range(1, int(self.decision_interval/self.packet_generation_interval) + 1):
+        base_steps = int(self.decision_interval/self.packet_generation_interval)
+        for i in range(1, base_steps + 1):
             time = self.time + timedelta(seconds=i*self.packet_generation_interval)
             self.generate_packet(time)
+
+        if self._is_burst_window():
+            extra_steps = int(base_steps * (self.burst_multiplier - 1.0))
+            if extra_steps > 0:
+                if self.burst_source_nodes is None:
+                    candidates = [n for n in self.nodes if n != self.destination_node]
+                    k = min(8, max(3, len(candidates) // 10))
+                    burst_sources = random.sample(candidates, k) if len(candidates) >= k else candidates
+                else:
+                    burst_sources = [n for n in self.burst_source_nodes if n in self.nodes]
+
+                if len(burst_sources) > 0:
+                    for j in range(extra_steps):
+                        t = self.time + timedelta(seconds=((j + 1) / (extra_steps + 1)) * self.decision_interval)
+                        src = burst_sources[j % len(burst_sources)]
+                        self.generate_packet_from_source(src, t)
 
     def forwarding(self):
         """
@@ -279,6 +366,12 @@ class SatNet(DiGraph):
         self.packetsArrived = []
         self.packet_drop = []
         self._finalized_packet_ids = set()
+        self._routing_table_cache = OrderedDict()
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self.window_generated = 0
+        self.window_arrived = 0
+        self.window_dropped = 0
         for node in self.nodes:
             self.nodes[node]['n'].reset()
         self.recalculate_edges()
@@ -297,9 +390,27 @@ class SatNet(DiGraph):
         if packet.arrive == 1:
             self.packetsArrived.append(packet)
             self.metrics.record_arrived(packet.delay)
+            self.window_arrived += 1
         elif packet.drop == 1:
             self.packet_drop.append(packet)
             self.metrics.record_dropped(packet.delay)
+            self.window_dropped += 1
+
+    def flush_window_stats(self):
+        completed = self.window_arrived + self.window_dropped
+        snapshot = {
+            "generated": self.window_generated,
+            "arrived": self.window_arrived,
+            "dropped": self.window_dropped,
+            "window_pdr": (self.window_arrived / completed) if completed > 0 else 0.0,
+            "queue_depth": int(self.eventlist.Q.qsize()),
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+        }
+        self.window_generated = 0
+        self.window_arrived = 0
+        self.window_dropped = 0
+        return snapshot
 
     def recalculate_edges(self):
         for edge in list(self.edges):

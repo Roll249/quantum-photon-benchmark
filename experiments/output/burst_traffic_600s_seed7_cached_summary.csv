@@ -1,0 +1,3 @@
+generated,arrived,dropped,total_delay,decision_count,decision_time_total_s,loop_avoided,retry_events,drop_no_route,drop_retry_exceeded,pdr,average_delay_s,average_decision_time_s,mode,seed,sim_seconds,packet_interval_s,burst_start_s,burst_duration_s,burst_multiplier,cache_hits,cache_misses,cache_hit_rate
+3600,217,3381,805.8311261798391,0,0.0,54795,0,0,0,0.06027777777777778,0.22396640527510814,0.0,baseline,7,600,0.2,300,60,3.0,0,0,0.0
+3600,2772,827,492.940548090331,60,1.5385040690016467,30085,0,0,0,0.77,0.13696597612957237,0.025641734483360778,quantum,7,600,0.2,300,60,3.0,43,17,0.7166666666666667
