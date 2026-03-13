@@ -56,8 +56,10 @@ class Event:
         elif self.what == 'lookup':
             self.node.lookup(self)
             if self.packet.drop == 1:
+                self.node.net.finalize_packet(self.packet)
                 return None
             elif self.packet.arrive == 1:
+                self.node.net.finalize_packet(self.packet)
                 return None
             else:
                 return MakeEvent(self.node, self.packet.time, 'send', self.packet, timedelta(seconds=0))

@@ -1,0 +1,3 @@
+mode,sim_seconds,decision_interval,packet_interval_s,rounds,generated,arrived,dropped,arrived_packets,dropped_packets,pdr,average_delay_s,decision_count,decision_time_total_s,average_decision_time_s,total_delay
+baseline,120,10,1.0,12,125,0,124,0,124,0.0,0.23867145349243718,0,0.0,0.0,29.59526023306221
+quantum,120,10,1.0,12,125,50,74,50,74,0.4,0.1734992064055553,12,0.7270905309960654,0.060590877583005444,21.513901594288857

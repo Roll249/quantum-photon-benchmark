@@ -1,0 +1,10 @@
+numpy
+scipy
+networkx
+matplotlib
+qiskit
+qiskit-aer
+gym
+torch
+skyfield
+skyfield-data

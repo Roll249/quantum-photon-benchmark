@@ -4,6 +4,8 @@
 """
 import csv
 import math
+import time as perf_time
+from pathlib import Path
 from networkx import DiGraph
 import gym
 import torch as th
@@ -18,11 +20,15 @@ import random
 from .eventList import EventList
 from .event import MakeEvent
 from .log import Log
+from .config import QuantumRoutingConfig, RuntimeConfig
+from .metrics import SimulationMetrics
+from .quantum_routing import build_quantum_actions
 
 log = Log()
 decision_interval = 10
-tlefilepath = "/home/eini001/EventDriven/Distributed/SatSim/envs/iridium_tle_sorted.txt"
-testLogDir = '/home/eini001/satenvsimTest/algorithms/TestResults/model4/seen/DGRL/'
+_ROOT = Path(__file__).resolve().parent
+tlefilepath = str(_ROOT / "iridium_tle_sorted.txt")
+testLogDir = str(_ROOT / "logs") + "/"
 test = None  # or "DGRL"
 
 if test is not None:
@@ -70,6 +76,12 @@ class SatNet(DiGraph):
         self.time = datetime(self.start_time[0], self.start_time[1], self.start_time[2], self.start_time[3],
                              self.start_time[4], self.start_time[5])
         self.eventlist = EventList()
+        self.quantum_config = QuantumRoutingConfig()
+        self.runtime_config = RuntimeConfig()
+        self.metrics = SimulationMetrics()
+        self.packetsArrived = []
+        self.packet_drop = []
+        self._finalized_packet_ids = set()
 
         self.init_net(tlefilepath)
         self.source_node = self.cal_src()
@@ -138,8 +150,17 @@ class SatNet(DiGraph):
         :param action: the selected routing path
         :return: the next state after forwarding packets with the selected routing path
         """
+        if actions is None and self.runtime_config.use_quantum_routing_by_default:
+            begin = perf_time.perf_counter()
+            actions, _ = build_quantum_actions(self, self.quantum_config)
+            self.metrics.record_decision_time(perf_time.perf_counter() - begin)
+
+        if actions is None:
+            actions = {node: {} for node in self.nodes}
+
         for node in self.nodes:
-            self.nodes[node]['n'].update_routing_table(actions[node])
+            node_actions = actions.get(node, {})
+            self.nodes[node]['n'].update_routing_table(node_actions)
             # print(self.nodes[node]['n'].router.routing_table)
         reward = self.forwarding()
         # uncomment the following lines for constructing action space
@@ -155,6 +176,7 @@ class SatNet(DiGraph):
         """
         for i in range(self.init_num_packet):
             packet = Cbr.generate_packet(self.source_node, self.destination_node, 1, self.time+timedelta(seconds=i/10000))
+            self.metrics.record_generated()
             self.eventlist.Q.put(
                 MakeEvent(self.nodes[self.source_node]['n'], self.time+timedelta(seconds=i/10000), 'send', packet,
                           timedelta(seconds=0)))
@@ -168,6 +190,7 @@ class SatNet(DiGraph):
         :return:
         """
         packet = Cbr.generate_packet(self.source_node, self.destination_node, num, generateTime)
+        self.metrics.record_generated(num)
         # self.nodes[self.source_node]['n'].sending_queue.append(packet)
         self.eventlist.Q.put(
             MakeEvent(self.nodes[self.source_node]['n'], generateTime, 'send', packet, timedelta(seconds=0)))
@@ -252,6 +275,10 @@ class SatNet(DiGraph):
         self.time = datetime(self.start_time[0], self.start_time[1], self.start_time[2], self.start_time[3],
                              self.start_time[4], self.start_time[5])
         self.eventlist = EventList()
+        self.metrics = SimulationMetrics()
+        self.packetsArrived = []
+        self.packet_drop = []
+        self._finalized_packet_ids = set()
         for node in self.nodes:
             self.nodes[node]['n'].reset()
         self.recalculate_edges()
@@ -261,6 +288,18 @@ class SatNet(DiGraph):
             self.nodes[node]['n'].init_routing_table(list(self.successors(node)), self.out_degree)
         self.init_traffic()
         return self
+
+    def finalize_packet(self, packet):
+        if packet.id in self._finalized_packet_ids:
+            return
+
+        self._finalized_packet_ids.add(packet.id)
+        if packet.arrive == 1:
+            self.packetsArrived.append(packet)
+            self.metrics.record_arrived(packet.delay)
+        elif packet.drop == 1:
+            self.packet_drop.append(packet)
+            self.metrics.record_dropped(packet.delay)
 
     def recalculate_edges(self):
         for edge in list(self.edges):
