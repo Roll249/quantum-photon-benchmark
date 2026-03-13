@@ -79,9 +79,42 @@ def quantum_peak_probability(g: nx.Graph, s: int, d: int, cfg: QuantumRoutingCon
     return float(np.max(curve))
 
 
-def quantum_score(g: nx.Graph, s: int, d: int, cfg: QuantumRoutingConfig) -> float:
+def _quantum_probability_vector(g: nx.Graph, s: int, cfg: QuantumRoutingConfig) -> np.ndarray:
+    adjacency = to_adjacency(g)
+    h = hamiltonian_from_adjacency(adjacency)
+    eigvals, eigvecs = np.linalg.eigh(h)
+    t_grid = np.linspace(cfg.t_min, cfg.t_max, cfg.t_steps)
+
+    coeff = eigvecs.conj().T[:, s]
+    phase = np.exp(-1j * np.outer(t_grid, eigvals))
+    evolved = (phase * coeff) @ eigvecs.T
+    all_probs = np.abs(evolved) ** 2
+    target_mass = 1.0 - all_probs[:, s]
+    t_opt_idx = int(np.argmax(target_mass))
+    return all_probs[t_opt_idx]
+
+
+def quantum_path(g: nx.Graph, s: int, d: int, cfg: QuantumRoutingConfig) -> tuple[list[int], float, bool, float]:
+    probs = _quantum_probability_vector(g, s, cfg)
+    weighted = nx.Graph()
+    weighted.add_nodes_from(g.nodes)
+
+    for u, v, data in g.edges(data=True):
+        q_weight = 1.0 / (float(probs[v]) + cfg.epsilon)
+        total_weight = float(data["cost"]) * (1.0 + cfg.quantum_bias * q_weight)
+        weighted.add_edge(u, v, weight=total_weight)
+
+    path = nx.dijkstra_path(weighted, source=s, target=d, weight="weight")
+    base_cost = sum(g.edges[path[i], path[i + 1]]["cost"] for i in range(len(path) - 1))
+    feasible = True
+    for i in range(len(path) - 1):
+        edge = g.edges[path[i], path[i + 1]]
+        if edge["delay_s"] > cfg.delay_threshold_s or edge["rate_bps"] < cfg.bandwidth_threshold_bps:
+            feasible = False
+            break
+
     pmax = quantum_peak_probability(g, s, d, cfg)
-    return 1.0 / max(pmax, cfg.epsilon)
+    return path, float(base_cost), feasible, pmax
 
 
 def run_benchmark(sizes=(50, 100, 500, 1000), trials=3, base_seed=7):
@@ -94,9 +127,10 @@ def run_benchmark(sizes=(50, 100, 500, 1000), trials=3, base_seed=7):
         quantum_times = []
         dijkstra_costs = []
         astar_costs = []
-        quantum_scores = []
+        quantum_costs = []
         quantum_probs = []
         quality_ratios = []
+        quantum_feasible = []
 
         for t in range(trials):
             seed = base_seed + t
@@ -112,16 +146,16 @@ def run_benchmark(sizes=(50, 100, 500, 1000), trials=3, base_seed=7):
             astar_times.append(time.perf_counter() - start)
 
             start = time.perf_counter()
-            q_prob = quantum_peak_probability(g, s, d, cfg)
-            q_score = 1.0 / max(q_prob, cfg.epsilon)
+            q_path, q_cost, q_ok, q_prob = quantum_path(g, s, d, cfg)
             quantum_times.append(time.perf_counter() - start)
 
             dijkstra_costs.append(d_cost)
             astar_costs.append(a_cost)
-            quantum_scores.append(q_score)
+            quantum_costs.append(q_cost)
             quantum_probs.append(q_prob)
+            quantum_feasible.append(1 if q_ok else 0)
 
-            quality_ratios.append(q_score / max(d_cost, 1e-9))
+            quality_ratios.append(q_cost / max(d_cost, 1e-9))
 
             rows.append(
                 {
@@ -133,7 +167,9 @@ def run_benchmark(sizes=(50, 100, 500, 1000), trials=3, base_seed=7):
                     "quantum_time_s": quantum_times[-1],
                     "dijkstra_cost": d_cost,
                     "astar_cost": a_cost,
-                    "quantum_score": q_score,
+                    "quantum_cost": q_cost,
+                    "quantum_path_hops": len(q_path) - 1,
+                    "quantum_feasible": q_ok,
                     "quantum_peak_prob": q_prob,
                     "quality_ratio": quality_ratios[-1],
                 }
@@ -145,7 +181,9 @@ def run_benchmark(sizes=(50, 100, 500, 1000), trials=3, base_seed=7):
             f"| quantum_t={mean(quantum_times):.4f}s "
             f"| dijkstra_cost={mean(dijkstra_costs):.4f} "
             f"| astar_cost={mean(astar_costs):.4f} "
+            f"| quantum_cost={mean(quantum_costs):.4f} "
             f"| q_peak_prob={mean(quantum_probs):.4f} "
+            f"| q_feasible={mean(quantum_feasible):.2f} "
             f"| quality_ratio={mean(quality_ratios):.4f}"
         )
 
@@ -163,7 +201,9 @@ def write_csv(rows, output_path: Path) -> None:
         "quantum_time_s",
         "dijkstra_cost",
         "astar_cost",
-        "quantum_score",
+        "quantum_cost",
+        "quantum_path_hops",
+        "quantum_feasible",
         "quantum_peak_prob",
         "quality_ratio",
     ]

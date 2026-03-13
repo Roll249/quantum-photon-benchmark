@@ -29,3 +29,6 @@ class QiskitConfig:
 class RuntimeConfig:
     use_quantum_routing_by_default: bool = True
     enable_qiskit_stage: bool = True
+    max_send_retries: int = 4
+    tabu_backtrack_hops: int = 2
+    max_visits_per_node: int = 2

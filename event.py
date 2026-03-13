@@ -40,14 +40,36 @@ class Event:
         :return:
         """
         if self.what == 'send':
-            nexthop = self.node.router.look_up(self.packet)
+            nexthop = self.packet.next_hop if self.packet.next_hop is not None else self.node.select_next_hop(self.packet)
+            if nexthop is None:
+                self.packet.drop = 1
+                self.packet.drop_reason = 'no_route'
+                self.node.net.metrics.record_drop_no_route()
+                self.node.net.finalize_packet(self.packet)
+                return None
+
             if not self.node.net.has_edge(self.node.name, nexthop):
                 # print('暂时没有到下一跳的链路')
+                self.packet.send_retry_count += 1
+                self.node.net.metrics.record_retry_event()
+                if self.packet.send_retry_count > self.node.net.runtime_config.max_send_retries:
+                    self.packet.drop = 1
+                    self.packet.drop_reason = 'retry_exceeded'
+                    self.node.net.metrics.record_drop_retry_exceeded()
+                    self.node.net.finalize_packet(self.packet)
+                    return None
+
+                self.packet.next_hop = self.node.select_next_hop(self.packet)
                 self.packet.time += timedelta(seconds=1)
                 self.packet.delay += 1.0
                 # print('the start time and the packet time:', self.startTime, self.packet.time)
                 return MakeEvent(self.node, self.packet.time, 'send', self.packet, timedelta(seconds=0))
+
+            self.packet.send_retry_count = 0
+            self.packet.next_hop = nexthop
             txtime, proptime = self.node.send(self, nexthop)
+            self.packet.mark_visit(nexthop)
+            self.packet.next_hop = None
             return MakeEvent(self.node.net.nodes[nexthop]['n'], self.packet.time,
                              'receive', self.packet, timedelta(seconds=txtime))
         elif self.what == 'receive':

@@ -9,6 +9,10 @@ class SimulationMetrics:
     total_delay: float = 0.0
     decision_count: int = 0
     decision_time_total_s: float = 0.0
+    loop_avoided: int = 0
+    retry_events: int = 0
+    drop_no_route: int = 0
+    drop_retry_exceeded: int = 0
 
     def record_generated(self, count: int = 1) -> None:
         self.generated += count
@@ -24,6 +28,18 @@ class SimulationMetrics:
     def record_decision_time(self, duration_s: float) -> None:
         self.decision_count += 1
         self.decision_time_total_s += duration_s
+
+    def record_loop_avoided(self) -> None:
+        self.loop_avoided += 1
+
+    def record_retry_event(self) -> None:
+        self.retry_events += 1
+
+    def record_drop_no_route(self) -> None:
+        self.drop_no_route += 1
+
+    def record_drop_retry_exceeded(self) -> None:
+        self.drop_retry_exceeded += 1
 
     @property
     def pdr(self) -> float:

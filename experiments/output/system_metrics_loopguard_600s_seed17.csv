@@ -1,0 +1,3 @@
+generated,arrived,dropped,total_delay,decision_count,decision_time_total_s,loop_avoided,retry_events,drop_no_route,drop_retry_exceeded,pdr,average_delay_s,average_decision_time_s,mode,sim_seconds,decision_interval,packet_interval_s,rounds,arrived_packets,dropped_packets
+3007,200,2805,676.3737912109276,0,0.0,45691,0,0,0,0.06651147322913202,0.22508279241628207,0.0,baseline,600,10,0.2,60,200,2805
+3007,2346,660,427.0009595984496,60,6.163972005997493,26201,0,0,0,0.7801795809777187,0.1420495540913006,0.1027328667666249,quantum,600,10,0.2,60,2346,660

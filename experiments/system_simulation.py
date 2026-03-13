@@ -59,24 +59,7 @@ def run_mode(mode: str, sim_seconds: int, seed: int, packet_interval_s: float) -
 
 def write_csv(output_path: Path, rows: list[dict]) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "mode",
-        "sim_seconds",
-        "decision_interval",
-        "packet_interval_s",
-        "rounds",
-        "generated",
-        "arrived",
-        "dropped",
-        "arrived_packets",
-        "dropped_packets",
-        "pdr",
-        "average_delay_s",
-        "decision_count",
-        "decision_time_total_s",
-        "average_decision_time_s",
-        "total_delay",
-    ]
+    fieldnames = list(rows[0].keys()) if rows else []
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

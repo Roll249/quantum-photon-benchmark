@@ -21,6 +21,7 @@ class QuantumRoutingArtifacts:
     penalized_hamiltonian: np.ndarray
     penalties: np.ndarray
     time_grid: np.ndarray
+    paths: Optional[Dict[str, Dict[str, List[str]]]] = None
 
 
 def _node_energy_ratio(net, node_name: str) -> float:
@@ -191,6 +192,25 @@ def build_quantum_actions(
     net,
     cfg: Optional[QuantumRoutingConfig] = None,
 ) -> Tuple[Dict[str, Dict[str, str]], QuantumRoutingArtifacts]:
+    paths, artifacts = build_quantum_paths(net, cfg)
+    actions: Dict[str, Dict[str, str]] = {}
+    for src, src_paths in paths.items():
+        node_actions: Dict[str, str] = {}
+        for dst, path in src_paths.items():
+            if src == dst:
+                node_actions[dst] = src
+            elif len(path) >= 2:
+                node_actions[dst] = path[1]
+            else:
+                node_actions[dst] = src
+        actions[src] = node_actions
+    return actions, artifacts
+
+
+def build_quantum_paths(
+    net,
+    cfg: Optional[QuantumRoutingConfig] = None,
+) -> Tuple[Dict[str, Dict[str, List[str]]], QuantumRoutingArtifacts]:
     cfg = cfg or QuantumRoutingConfig()
     g, nodes, _ = build_quantum_graph(net, cfg)
     adjacency = _sym_adjacency_from_digraph(g, nodes)
@@ -201,7 +221,7 @@ def build_quantum_actions(
     node_index = {node: i for i, node in enumerate(nodes)}
     eigvals, eigvecs = np.linalg.eigh(penalized_hamiltonian)
 
-    actions: Dict[str, Dict[str, str]] = {}
+    paths: Dict[str, Dict[str, List[str]]] = {}
     for src in nodes:
         src_idx = node_index[src]
         quantum_probs = _quantum_probability_vector(
@@ -211,7 +231,7 @@ def build_quantum_actions(
             eigvals=eigvals,
             eigvecs=eigvecs,
         )
-        node_actions: Dict[str, str] = {}
+        node_paths: Dict[str, List[str]] = {}
         weighted_graph = _build_weighted_graph(g, quantum_probs, node_index, cfg)
 
         successors = list(g.successors(src))
@@ -223,16 +243,19 @@ def build_quantum_actions(
 
         for dst in nodes:
             if src == dst:
-                node_actions[dst] = src
+                node_paths[dst] = [src]
                 continue
 
             path = shortest_paths.get(dst)
             if path is not None and len(path) >= 2:
-                node_actions[dst] = path[1]
+                node_paths[dst] = path
             else:
-                node_actions[dst] = fallback
+                if fallback == src:
+                    node_paths[dst] = [src]
+                else:
+                    node_paths[dst] = [src, fallback]
 
-        actions[src] = node_actions
+        paths[src] = node_paths
 
     artifacts = QuantumRoutingArtifacts(
         nodes=nodes,
@@ -241,8 +264,9 @@ def build_quantum_actions(
         penalized_hamiltonian=penalized_hamiltonian,
         penalties=penalties,
         time_grid=time_grid,
+        paths=paths,
     )
-    return actions, artifacts
+    return paths, artifacts
 
 
 def check_constraints(

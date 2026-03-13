@@ -20,6 +20,18 @@ class Packet:
         self.econ = 0
         self.id = self.__class__.cid
         self.__class__.cid += 1
+        self.prev_node = None
+        self.path_history = [s_node]
+        self.node_visit_count = {s_node: 1}
+        self.send_retry_count = 0
+        self.drop_reason = None
+        self.next_hop = None
+
+    def mark_visit(self, node_name):
+        self.prev_node = self.cur_node
+        self.cur_node = node_name
+        self.path_history.append(node_name)
+        self.node_visit_count[node_name] = self.node_visit_count.get(node_name, 0) + 1
 
     def is_expire(self):
         return self.ttl <= 0

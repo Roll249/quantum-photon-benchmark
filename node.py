@@ -67,8 +67,48 @@ class Node:
         event.packet.delay += event.duration.total_seconds()
         self.bmm.decrease_rx_energy(event.duration.total_seconds())
 
+    def _ordered_candidates(self, packet):
+        successors = list(self.net.successors(self.name))
+        if not successors:
+            return []
+
+        preferred = self.router.look_up(packet)
+        if preferred in successors:
+            ordered = [preferred]
+            for hop in successors:
+                if hop != preferred:
+                    ordered.append(hop)
+            return ordered
+        return successors
+
+    def select_next_hop(self, packet):
+        candidates = self._ordered_candidates(packet)
+        if len(candidates) == 0:
+            return None
+
+        recent_nodes = set(packet.path_history[-self.net.runtime_config.tabu_backtrack_hops:])
+        filtered = []
+
+        for hop in candidates:
+            if hop == packet.prev_node and len(candidates) > 1:
+                self.net.metrics.record_loop_avoided()
+                continue
+
+            if packet.node_visit_count.get(hop, 0) >= self.net.runtime_config.max_visits_per_node:
+                self.net.metrics.record_loop_avoided()
+                continue
+
+            if hop in recent_nodes and len(candidates) > 1:
+                self.net.metrics.record_loop_avoided()
+                continue
+
+            filtered.append(hop)
+
+        if len(filtered) > 0:
+            return filtered[0]
+        return candidates[0]
+
     def lookup(self, event):
-        nexthop = self.router.look_up(event.packet)
         self.bmm.decrease_rtable_lookup(event.packet.size)
         event.packet.time += event.duration
         event.packet.delay += event.duration.total_seconds()
@@ -81,6 +121,9 @@ class Node:
         # 2、ttl小于等于0，丢包了
         elif event.packet.ttl <= 0:
             event.packet.drop = 1
+            event.packet.drop_reason = 'ttl_expired'
+        else:
+            event.packet.next_hop = self.select_next_hop(event.packet)
             # return None
         # 3、放到发送队列，准备发到下一跳
         # self.sending_queue.put(packet)
