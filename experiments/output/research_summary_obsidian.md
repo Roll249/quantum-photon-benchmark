@@ -107,12 +107,59 @@ Diễn giải:
 - Baseline rơi vào trạng thái nghẽn kéo dài, không có khả năng phục hồi mạnh sau burst.
 - Quantum+Cache thể hiện **graceful degradation** trong burst và duy trì chất lượng ổn định sau burst.
 
+- **B1: Mô hình hóa mạng động** trong [satnet.py](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html): mỗi vòng mô phỏng cập nhật vị trí vệ tinh, liên kết khả dụng, sự kiện gửi/nhận/look-up.
+- **B2: Xây trọng số định tuyến có ràng buộc** trong [quantum_routing.py](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html): từ delay, bandwidth, energy tạo đồ thị chi phí; vi phạm ngưỡng bị phạt (penalty).
+- **B3: Suy luận định tuyến lượng tử (CTQW)**: tạo Hamiltonian từ Laplacian, tiến hóa trạng thái theo thời gian để suy ra xu hướng đường đi tốt toàn cục.
+- **B4: Sinh routing actions**: chuyển kết quả lượng tử thành next-hop cho từng cặp nguồn-đích; fallback khi thiếu đường.
+- **B5: Ổn định data-plane** ở [node.py](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html) + [event.py](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html): anti-loop (tabu/no-backtrack), giới hạn revisit, retry cap, drop reason rõ ràng.
+- **B6: Giảm overhead bằng cache** ở [satnet.py](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html): nếu topology signature tương tự thì tái dùng bảng định tuyến đã tính (cache hit), không chạy lại quantum full.
+- **B7: Benchmark và xuất kết quả** ở [burst_traffic_benchmark.py](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html): chạy baseline vs quantum+cache, nhiều seed, xuất CSV + hero chart.
+
+**Ý nghĩa của từng bảng kết quả**
+
+- **Bảng tổng hợp mean±std** ([burst_traffic_600s_cached_multiseed_summary.csv](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html)):
+    - `pdr_mean/std`: độ tin cậy giao gói và độ ổn định theo seed.
+    - `average_delay_s_mean/std`: chất lượng độ trễ đầu-cuối.
+    - `average_decision_time_s_mean/std`: chi phí tính quyết định định tuyến.
+    - `cache_hit_rate_mean/std`: cache có thực sự tái dùng được hay không.
+    - [arrived/dropped](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html): sản lượng giao thành công và thất bại.
+    - [loop_avoided](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html): mức độ hệ anti-loop can thiệp để tránh vòng lặp.
+- **Bảng timeseries theo thời gian** ([burst_traffic_600s_cached_multiseed_timeseries.csv](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html)):
+    - `cumulative_pdr_mean/std`: sức khỏe hệ thống tích lũy theo thời gian.
+    - `window_pdr_mean/std`: phản ứng tức thời từng cửa sổ (rất quan trọng khi vào burst).
+    - `in_burst`: đánh dấu vùng tải tăng đột ngột để đọc đúng hiệu ứng.
+    - `queue_depth`: áp lực hàng đợi (nghẽn).
+    - `cache_hit_rate_mean`: hiệu quả cache theo thời gian.
+- **Bảng non-burst 600s** ([system_metrics_loopguard_600s_summary.csv](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html)):
+    - Dùng làm đối chứng: tách riêng “năng lực nền” khỏi “khả năng chịu burst”.
+
+**Tại sao phải có từng phần**
+
+- **Mean±std đa seed**: biến kết quả từ “1 lần chạy may mắn” thành bằng chứng thực nghiệm có độ tin cậy.
+- **Timeseries**: cho thấy cơ chế động “suy giảm có kiểm soát và phục hồi”, thứ mà bảng tổng hợp không thể hiện.
+- **Baseline vs Quantum+Cache**: tách rõ lợi ích thuật toán và lợi ích triển khai.
+- **Cache metrics + decision time**: trả lời câu hỏi “hay nhưng có chạy thực tế được không?”.
+
+**Diễn giải ngắn bộ số hiện tại**
+
+- Quantum+Cache vượt baseline mạnh về PDR và delay, đồng thời giữ decision overhead ở mức vài chục ms nhờ hit-rate cao.
+- Baseline rơi vào nghẽn sớm; quantum thể hiện khả năng chịu burst và ổn định hậu burst.
+- Kết luận khoa học hợp lý: **cải thiện đáng kể trong mô phỏng động**, không overclaim sang thời gian phần cứng QPU thật.
 ### 5.4 Hình kết quả chính
 
 ![Hero Chart: Burst Traffic (Mean ± 1σ)](burst_traffic_600s_cached_multiseed_hero.png)
 
 ![Seed Example: Burst Traffic with Cache](burst_traffic_600s_seed7_cached_pdr_linechart.png)
 
+Vùng hồng trên biểu đồ là **burst window** — khoảng thời gian bạn chủ động bơm tải tăng đột biến vào mạng.
+
+Trong setup hiện tại:
+
+- Bắt đầu: [t = 300s](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html)
+- Kết thúc: [t = 360s](vscode-file://vscode-app/opt/visual-studio-code/resources/app/out/vs/code/electron-browser/workbench/workbench.html)
+- Cường độ: lưu lượng tăng `x3`
+
+Nó được tô để người đọc nhìn ngay “đây là giai đoạn stress test”, rồi so sánh phản ứng của baseline và quantum trong đúng đoạn này (sụp, giữ ổn định, hay phục hồi sau burst).
 ### 5.5 Kết quả nền không-burst (tham chiếu)
 
 | Method | PDR ↑ | Avg Delay (s) ↓ | Decision Time (s) ↓ |
@@ -181,3 +228,25 @@ for s in 7 11 13 17 19; do
 done
 ```
 
+
+`Cache` ở đây là **Routing Table Cache**: bộ nhớ tạm giữ lại kết quả định tuyến quantum đã tính ở các vòng trước, để **không phải tính lại từ đầu mỗi lần**.
+
+**Cụ thể nó làm gì**
+
+- Sau khi quantum tính xong bảng next-hop cho toàn mạng, hệ thống lưu bảng đó theo một “chữ ký trạng thái mạng” (topology signature).
+- Ở vòng sau, nếu trạng thái mạng tương tự, hệ thống lấy luôn bảng đã lưu (cache hit) thay vì chạy lại CTQW.
+- Nếu trạng thái khác nhiều, hệ thống tính mới rồi cập nhật cache (caclạihe miss).
+
+**Nó giải quyết vấn đề gì**
+
+- Vấn đề chính trước đó: quantum routing cho chất lượng tốt nhưng **overhead quyết định cao** (tốn thời gian tính toán mỗi vòng).
+- Cache giảm mạnh chi phí này, nên routing quantum thực dụng hơn trong runtime dài và traffic burst.
+- Trong kết quả của bạn, cache hit rate ~71.67% và decision time quantum giảm xuống mức ~29 ms/vòng (thay vì cao hơn đáng kể khi không cache).
+
+Nếu bạn muốn, mình có thể thêm luôn một sơ đồ 5 dòng vào phần summary để giải thích luồng `cache hit/miss` cho reviewer dễ hiểu.
+
+Trường hợp một node bị hỏng thì sẽ tính toán lại mạng lưới thế nào 
+``
+response của các vệ tinh khác khi nhận được tín hiệu của các vệ tinh còn lại
+
+add simulator graphic

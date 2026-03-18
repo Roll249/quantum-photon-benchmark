@@ -7,7 +7,7 @@ Dưới lăng kính của một kỹ sư phần mềm và một người làm ng
 Chúng ta không giải quyết bài toán "Tìm đường đi ngắn nhất" (Shortest Path) thông thường. Dijkstra hay BFS/DFS đã làm việc đó quá xuất sắc. Bài toán thực sự mà chúng ta nhắm tới là: **Định tuyến Đa ràng buộc trên Đồ thị Động thời gian thực (Real-time Dynamic Multi-Constrained Path Routing).**
 
 * **Input (Đầu vào):** Một đồ thị mạng vệ tinh $G(V, E)$, trong đó các node $V$ và các cạnh $E$ liên tục thay đổi trạng thái (vệ tinh di chuyển, liên kết bị đứt). Mỗi cạnh mang nhiều trọng số (độ trễ, băng thông khả dụng, năng lượng pin). Một yêu cầu gửi gói tin từ Source $S$ đến Destination $D$.
-* **Constraints (Ràng buộc):** Đường đi phải thỏa mãn đồng thời các ngưỡng khắt khe (ví dụ: Delay $< 50ms$ VÀ Bandwidth $> 1Gbps$).
+* **Constraints (Ràng buộc):** Đường đi phải thỏa mãn đồng thời các ngưỡng khắt khe (ví dụ: Delay $< 50ms$ VÀ Rate $> 1Gbps$).
 * **Output (Đầu ra):** Tìm ra con đường tối ưu nhất trong thời gian cực ngắn (cỡ mili-giây) để mạng không bị nghẽn trước khi vệ tinh đổi vị trí.
 * **Bản chất Toán học (Nỗi đau):** Đây là bài toán **NP-Hard**. Không có một thuật toán đa thức (Polynomial time) cổ điển nào giải được nó một cách hoàn hảo.
 * **Giải pháp Lượng tử của chúng ta:** Sử dụng **Bước đi Lượng tử Thời gian liên tục (Continuous-Time Quantum Walk - CTQW)**. Ta biến ma trận kề của đồ thị thành Toán tử Hamilton $\hat{H}$. Ta mã hóa các ràng buộc thành các "bẫy pha" (Phase penalties). Sóng xác suất lan truyền trên đồ thị, giao thoa triệt tiêu ở các đường vi phạm ràng buộc và cộng hưởng ở đường tối ưu, cho phép tìm ra đáp án mà không cần duyệt qua toàn bộ không gian tổ hợp.
